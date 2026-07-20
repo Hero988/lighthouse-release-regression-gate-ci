@@ -1,0 +1,62 @@
+name: Lighthouse release regression
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      # Replace this with a public URL you control or have permission to test.
+      AUDIT_URL: https://hero988.github.io/-five-page-focus/
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+    steps:
+      - name: Run the capped regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${APIFY_TOKEN}"
+
+          # Replace these baseline values with a snapshot from your own URL.
+          jq -n --arg url "${AUDIT_URL}" '{
+            startUrls: [{url: $url}],
+            confirmPermission: true,
+            device: "desktop",
+            baselines: [{
+              url: $url,
+              scores: {
+                performance: 100,
+                accessibility: 100,
+                bestPractices: 96,
+                seo: 100
+              },
+              metrics: {lcpMs: 251, cls: 0, tbtMs: 0}
+            }],
+            thresholds: {
+              maxScoreDrop: 5,
+              maxLcpIncreaseMs: 500,
+              maxClsIncrease: 0.05,
+              maxTbtIncreaseMs: 200
+            },
+            minimumScores: {
+              performance: 80,
+              accessibility: 90,
+              bestPractices: 80,
+              seo: 80
+            },
+            failRunOnRegression: true
+          }' > actor-input.json
+
+          curl --fail-with-body --silent --show-error --max-time 330 \
+            --request POST \
+            --header "Authorization: Bearer ${APIFY_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data-binary @actor-input.json \
+            "https://api.apify.com/v2/acts/hero98~lighthouse-release-regression-gate/run-sync-get-dataset-items?timeout=300&maxTotalChargeUsd=0.05" \
+            > actor-result.json
+
+          jq -e 'length == 1 and .[0].verdict == "PASS"' actor-result.json
